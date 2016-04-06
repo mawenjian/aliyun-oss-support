@@ -2666,3 +2666,4 @@ class ALIOSS{
 		$options [self::OSS_HEADERS] [$key] = $value;
 	} 	
 }
+
