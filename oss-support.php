@@ -1,14 +1,14 @@
 <?php
 /**
  * @package 阿里云附件
- * @version 2.0
+ * @version 2.1
  */
 /*
 Plugin Name: 阿里云附件
 Plugin URI: http://mawenjian.net/977.html
 Description: 使用阿里云存储OSS作为附件存储空间。（注意：从v1.0版本更新的用户请重新设置相关参数！）This is a plugin that uses Aliyun Cloud Storage(Aliyun OSS) for attachments remote saving. 
 Author: 马文建(Wenjian Ma)
-Version: 2.0
+Version: 2.1
 Author URI: http://mawenjian.net/
 */
 
@@ -57,7 +57,7 @@ function test_server_env() {
 	} catch(Exception $ex) {
 		echo "
 			<div id='oss-warning' class='updated fade'><p><strong>注意：</strong>测试结果显示，Aliyun OSS Support插件似乎不能在本服务器上正常运行...</p></div>
-			";
+			".$ex->getMessage();
 	}
 }
 
@@ -155,12 +155,12 @@ function _delete_local_file($file){
 
 
 /**
- * 在OSS中记录日志信息
- * @param $logpath 日志存放路径
+ * 将文件按内容写入OSS
+ * @param $uploadpath 存放路径
  * @param $content 写入的内容
  * @return bool
  */
-function _logged($logpath,$content) {
+function _file_upload_by_contents($uploadpath, $content, $type) {
 	//获取WP配置信息
 	$oss_options = get_option('oss_options', TRUE);
     $oss_bucket = attribute_escape($oss_options['bucket']);
@@ -179,10 +179,11 @@ function _logged($logpath,$content) {
 			'content' => $content,
 			'length' => strlen($content),
 			ALIOSS::OSS_HEADERS => array(
-				'Expires' => '2012-10-01 08:00:00',
+				//'Expires' => '2012-10-01 08:00:00',
 			),
+			ALIOSS::OSS_CONTENT_TYPE => $type,
 		);
-		$aliyun_oss->upload_file_by_content( $oss_bucket, $logpath, $upload_file_options );
+		$aliyun_oss->upload_file_by_content( $oss_bucket, $uploadpath, $upload_file_options );
 
 		return TRUE;
 		
@@ -192,11 +193,27 @@ function _logged($logpath,$content) {
 }
 
 /**
+ * 判断是否为上传插件/主题等系统操作
+ */
+function _is_system_op() {
+	if ($_GET["action"] == 'upload-plugin' || $_GET["action"] == 'upload-theme') {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/**
  * 上传附件（包括图片的原图）
  * @param $metadata
  * @return array()
  */
 function upload_attachments($metadata) {
+	//避免上传插件/主题时出现同步到OSS的情况
+	if(_is_system_op()) {
+		return $metadata;
+	}
+
 	$wp_uploads = wp_upload_dir();
 	//生成object在OSS中的存储路径
 	if(get_option('upload_path') == '.') {
@@ -214,7 +231,6 @@ function upload_attachments($metadata) {
 	
 	//执行上传操作
 	_file_upload ( $object, $file, $opt);
-	//_logged('2upload.txt',"object=$object;file=$file");
 	
 	//如果不在本地保存，则删除本地文件
 	if( _is_delete_local_file() ){
@@ -223,10 +239,7 @@ function upload_attachments($metadata) {
 	
 	return $metadata;
 }
-//避免上传插件/主题时出现同步到OSS的情况
-if(substr_count($_SERVER['REQUEST_URL'],'/update.php') <= 0)
-	add_filter('wp_handle_upload', 'upload_attachments', 50);
-
+add_filter('wp_handle_upload', 'upload_attachments', 999999);
 
 /**
  * 上传图片的缩略图
@@ -234,20 +247,19 @@ if(substr_count($_SERVER['REQUEST_URL'],'/update.php') <= 0)
  * @return array
  */
 function upload_thumbs($metadata) {
+	if(_is_system_op()) {
+		return $metadata;
+	}
+
 	//上传所有缩略图
 	if (isset($metadata['sizes']) && count($metadata['sizes']) > 0)
 	{
 		//获取OSS插件的配置信息
 		$oss_options = get_option('oss_options', TRUE);
-		//是否需要上传缩略图
-		$nothumb = (attribute_escape($oss_options['nothumb']) == 'true');
+		//是否需要上传缩略图（已废弃）
+		//$nothumb = (attribute_escape($oss_options['nothumb']) == 'true');
 		//是否需要删除本地文件
 		$is_delete_local_file = (attribute_escape($oss_options['nolocalsaving'])=='true');
-		
-		//如果禁止上传缩略图，就不用继续执行了
-		if( $nothumb ) {
-			return $metadata;
-		}
 		
 		//获取上传路径
 		$wp_uploads = wp_upload_dir();
@@ -256,34 +268,70 @@ function upload_thumbs($metadata) {
 		if(get_option('upload_path') == '.') {
 			$file_path = str_replace("./" ,'' , $file_path);
 		}
-		$object_path = str_replace(get_home_path(), '', $file_path);
-		
 		
 		//there may be duplicated filenames,so ....
 		foreach ($metadata['sizes'] as $val)
 		{
-			//生成object在OSS中的存储路径
-			$object = $object_path.$val['file'];
 			//生成本地存储路径
 			$file = $file_path . $val['file'];
-			//设置可选参数
-			$opt =array('Content-Type' => $val['mime-type']);
 			
-			//执行上传操作
-			_file_upload ( $object, $file, $opt );
-			//_logged('2thumb.txt',"object=$object;file=$file");
-			
-			//如果不在本地保存，则删除
-			if($is_delete_local_file)
+			//如果不在本地保存，则删除（已废弃）
+			if($is_delete_local_file) {
 				_delete_local_file($file);
+			}
 		}
 	}
 	
 	return $metadata;
 }
-//避免上传插件/主题时出现同步到OSS的情况
-if(substr_count($_SERVER['REQUEST_URL'],'/update.php') <= 0)
-	add_filter('wp_generate_attachment_metadata', 'upload_thumbs', 100);
+add_filter('wp_generate_attachment_metadata', 'upload_thumbs', 999999);
+
+
+/**
+ * 修改缩略图的Meta Data
+ * @param $metadata
+ * @return $metadata
+ */
+function modefiy_img_meta($metadata) {
+    $filename = basename($metadata['file']);
+    if(isset($metadata['sizes']['thumbnail'])) {
+        $metadata['sizes']['thumbnail']['file'] = $filename.'@!thumbnail';
+    }
+    if(isset($metadata['sizes']['post-thumbnail'])) {
+        $metadata['sizes']['post-thumbnail']['file'] = $filename.'@!post-thumbnail';
+    }
+    if(isset($metadata['sizes']['medium'])) {
+        $metadata['sizes']['medium']['file'] = $filename.'@!medium';
+    }
+    if(isset($metadata['sizes']['large'])) {
+        $metadata['sizes']['large']['file'] = $filename.'@!large';
+    }
+    return $metadata;
+}
+add_filter('wp_get_attachment_metadata', 'modefiy_img_meta', 999999);
+
+
+//hook所有xmlrpc的上传
+function xml_to_oss($methods) {
+    $methods['wp.uploadFile'] = 'oss_xmlrpc_upload';
+    $methods['metaWeblog.newMediaObject'] = 'oss_xmlrpc_upload';
+    return $methods;
+}
+function oss_xmlrpc_upload($args){
+	$data  = $args[3];
+	$object = sanitize_file_name( $data['name'] );
+	$type = $data['type'];
+	$contents = $data['bits'];
+	
+	$wp_upload_dir = wp_upload_dir();
+	$upload_url_path = get_option('upload_url_path');
+	$object_path =  $wp_upload_dir['url'].'/'.$object;
+	$url = $upload_url_path.'/'.$object;
+	_file_upload_by_contents($object_path, $contents, $type);
+
+	return array( 'file' => $url, 'url' => $url, 'type' => $type );
+}
+add_filter( 'xmlrpc_methods', 'xml_to_oss');
 
 
 /**
@@ -317,7 +365,7 @@ function delete_remote_file($file)
 
 	return $file;
 }
-add_action('wp_delete_file', 'delete_remote_file', 100);
+add_action('wp_delete_file', 'delete_remote_file', 999999);
 
 /**
  * 当upload_path为根目录时，需要移除URL中出现的“绝对路径”
@@ -328,8 +376,9 @@ function modefiy_img_url($url, $post_id) {
 	//_logged('2modify_url.txt',"url=$url");
 	return $url;
 }
-if(get_option('upload_path') == '.')
+if(get_option('upload_path') == '.') {
 	add_filter('wp_get_attachment_url', 'modefiy_img_url', 30, 2);
+}
 
 function oss_plugin_action_links( $links, $file ) {
 	if ( $file == plugin_basename( dirname(__FILE__).'/oss-support.php' ) ) {
@@ -437,14 +486,17 @@ function oss_setting_page() {
 	if($oss_host==null || $oss_host == '')
 		$oss_host = 'oss.aliyuncs.com';
 	
-	$oss_nothumb = attribute_escape($oss_options['nothumb']);
-	$oss_nothumb = ( $oss_nothumb == 'true' );
+	//不上传缩略图（已废弃）
+	//$oss_nothumb = attribute_escape($oss_options['nothumb']);
+	//$oss_nothumb = ( $oss_nothumb == 'true' );
+	$oss_nothumb = true;
 	
+	//不在本地保留备份
 	$oss_nolocalsaving = attribute_escape($oss_options['nolocalsaving']);
 	$oss_nolocalsaving = ( $oss_nolocalsaving == 'true' );
 ?>
 <div class="wrap" style="margin: 10px;">
-    <h2>阿里云附件 v2.0 设置</h2>
+    <h2>阿里云附件 v2.1 设置</h2>
     <form name="form1" method="post" action="<?php echo wp_nonce_url('./options-general.php?page=' . OSS_BASEFOLDER . '/oss-support.php'); ?>">
 		<table class="form-table">
 			<tr>
@@ -461,7 +513,7 @@ function oss_setting_page() {
 			<tr>
 				<th><legend>Secret Key</legend></th>
 				<td>
-					<input type="text" name="sk" value="<?php echo $oss_sk;?>" size="50" placeholder="Secret Key"/>
+					<input type="password" name="sk" value="<?php echo $oss_sk;?>" size="50" placeholder="Secret Key"/>
 					<p>访问 <a href="https://ak-console.aliyun.com/#/accesskey" target="_blank">阿里云 密钥管理页面</a>，获取 <code>AK/SK</code> 。</p>
 				</td>
 			</tr>
@@ -469,16 +521,30 @@ function oss_setting_page() {
 				<th><legend>HOST主机</legend></th>
 				<td>
 					<select id="hosts_set" onchange="hostChange()">
-						<option value="oss.aliyuncs.com">杭州节点（外网）</option>
-						<option value="oss-internal.aliyuncs.com">杭州节点（内网）</option>
-						<option value="oss-cn-beijing.aliyuncs.com">北京节点（外网）</option>
-						<option value="oss-cn-beijing-internal.aliyuncs.com">北京节点（内网）</option>
-						<option value="oss-cn-shenzhen.aliyuncs.com">深圳节点（外网）</option>
-						<option value="oss-cn-shenzhen-internal.aliyuncs.com">深圳节点（内网）</option>
 						<option value="oss-cn-qingdao.aliyuncs.com">青岛节点（外网）</option>
 						<option value="oss-cn-qingdao-internal.aliyuncs.com">青岛节点（内网）</option>
+						
+						<option value="oss-cn-beijing.aliyuncs.com">北京节点（外网）</option>
+						<option value="oss-cn-beijing-internal.aliyuncs.com">北京节点（内网）</option>
+						
+						<option value="oss-cn-hangzhou.aliyuncs.com">杭州节点（外网）</option>
+						<option value="oss-cn-hangzhou-internal.aliyuncs.com">杭州节点（内网）</option>
+						
+						<option value="oss-cn-shanghai.aliyuncs.com">上海节点（外网）</option>
+						<option value="oss-cn-shanghai-internal.aliyuncs.com">上海节点（内网）</option>
+						
 						<option value="oss-cn-hongkong.aliyuncs.com">香港节点（外网）</option>
 						<option value="oss-cn-hongkong-internal.aliyuncs.com">香港节点（内网）</option>
+						
+						<option value="oss-cn-shenzhen.aliyuncs.com">深圳节点（外网）</option>
+						<option value="oss-cn-shenzhen-internal.aliyuncs.com">深圳节点（内网）</option>
+						
+						<option value="oss-us-west-1.aliyuncs.com">美国节点（外网）</option>
+						<option value="oss-us-west-1-internal.aliyuncs.com">美国节点（内网）</option>
+						
+						<option value="oss-ap-southeast-1.aliyuncs.com">新加坡节点（外网）</option>
+						<option value="oss-ap-southeast-1-internal.aliyuncs.com">新加坡节点（内网）</option>
+						
 						<option value="">自定义设置</option>
 					</select>
 					<input type="text" id="oss_host" name="host" value="<?php echo $oss_host;?>" size="29" placeholder="oss.aliyuncs.com" onchange="initSelectSet()"/>
@@ -505,13 +571,20 @@ function oss_setting_page() {
 						initSelectSet();
 					</script>
 				</td>
-			</tr><tr>
+			</tr>
+
+			<!-- 下面部分已废弃 -->
+			<tr style="display:none;">
 				<th><legend>不上传缩略图</legend></th>
-				<td><input type="checkbox" name="nothumb" <?php if($oss_nothumb) echo 'checked="TRUE"';?> /></td>
-			</tr><tr>
+				<td><input type="checkbox" name="nothumb" <?php if($oss_nothumb) echo 'checked="TRUE"';?> disabled="true" /></td>
+			</tr>
+			<tr>
 				<th><legend>不在本地保留备份</legend></th>
 				<td><input type="checkbox" name="nolocalsaving" <?php if($oss_nolocalsaving) echo 'checked="TRUE"';?> /></td>
-			</tr><tr>
+			</tr>
+			<!-- 上面部分已废弃 -->
+
+			<tr>
 				<th><legend>本地文件夹：</legend></th>
 				<td>
 					<input type="text" name="upload_path" value="<?php echo $upload_path;?>" size="50" placeholder="请输入上传文件夹"/>
