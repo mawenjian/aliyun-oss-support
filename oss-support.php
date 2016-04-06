@@ -233,9 +233,9 @@ function upload_attachments($metadata) {
 	_file_upload ( $object, $file, $opt);
 	
 	//如果不在本地保存，则删除本地文件
-	if( _is_delete_local_file() ){
-		_delete_local_file($file);
-	}
+	//if( _is_delete_local_file() ){
+	//	_delete_local_file($file);
+	//}
 	
 	return $metadata;
 }
@@ -258,8 +258,8 @@ function upload_thumbs($metadata) {
 		$oss_options = get_option('oss_options', TRUE);
 		//是否需要上传缩略图（已废弃）
 		//$nothumb = (attribute_escape($oss_options['nothumb']) == 'true');
-		//是否需要删除本地文件
-		$is_delete_local_file = (attribute_escape($oss_options['nolocalsaving'])=='true');
+		//是否需要删除本地文件（已废弃）
+		//$is_delete_local_file = (attribute_escape($oss_options['nolocalsaving'])=='true');
 		
 		//获取上传路径
 		$wp_uploads = wp_upload_dir();
@@ -276,9 +276,9 @@ function upload_thumbs($metadata) {
 			$file = $file_path . $val['file'];
 			
 			//如果不在本地保存，则删除（已废弃）
-			if($is_delete_local_file) {
-				_delete_local_file($file);
-			}
+			//if($is_delete_local_file) {
+			//	_delete_local_file($file);
+			//}
 		}
 	}
 	
@@ -492,8 +492,9 @@ function oss_setting_page() {
 	$oss_nothumb = true;
 	
 	//不在本地保留备份
-	$oss_nolocalsaving = attribute_escape($oss_options['nolocalsaving']);
-	$oss_nolocalsaving = ( $oss_nolocalsaving == 'true' );
+	//$oss_nolocalsaving = attribute_escape($oss_options['nolocalsaving']);
+	//$oss_nolocalsaving = ( $oss_nolocalsaving == 'true' );
+	$oss_nolocalsaving = false;
 ?>
 <div class="wrap" style="margin: 10px;">
     <h2>阿里云附件 v2.1 设置</h2>
@@ -578,9 +579,9 @@ function oss_setting_page() {
 				<th><legend>不上传缩略图</legend></th>
 				<td><input type="checkbox" name="nothumb" <?php if($oss_nothumb) echo 'checked="TRUE"';?> disabled="true" /></td>
 			</tr>
-			<tr>
+			<tr style="display:none;">
 				<th><legend>不在本地保留备份</legend></th>
-				<td><input type="checkbox" name="nolocalsaving" <?php if($oss_nolocalsaving) echo 'checked="TRUE"';?> /></td>
+				<td><input type="checkbox" name="nolocalsaving" <?php if($oss_nolocalsaving) echo 'checked="TRUE"';?> disabled="true" /></td>
 			</tr>
 			<!-- 上面部分已废弃 -->
 
